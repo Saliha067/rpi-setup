@@ -1,0 +1,30 @@
+---
+# OpenClaw
+openclaw_user: openclaw
+openclaw_home: /home/openclaw
+openclaw_npm_package: "openclaw@latest"
+
+# Gateway UI/WebSocket port (default is usually 18789)
+openclaw_gateway_port: 9898
+
+# Bind mode: keep loopback for safety (recommended)
+openclaw_gateway_bind: "loopback"
+
+# Token for dashboard access (?token=...)
+# Change this to something long/random.
+openclaw_gateway_token: "CHANGE_ME_TO_A_LONG_RANDOM_TOKEN"
+
+# Remote Ollama (you said this works: http://192.168.0.28:8080/api/tags)
+openclaw_ollama_base_url: "http://192.168.0.28:8080"
+openclaw_ollama_api_key: "ollama-local"
+
+# Default context window used in the generated model entries
+# (You can override per model later.)
+openclaw_context_window: 8192
+
+# Firewall / SSH hardening
+lan_cidr: "192.168.0.0/24"
+ssh_port: 22
+
+# Optional: allow the dashboard port from LAN (I recommend false; use SSH tunnel instead)
+ufw_allow_dashboard_from_lan: false

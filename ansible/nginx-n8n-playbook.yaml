@@ -1,0 +1,10 @@
+---
+- name: Configure nginx reverse proxy for n8n
+  hosts: all
+  become: true
+  vars_files:
+    - vars.yaml
+
+  tasks:
+    - name: Include nginx n8n tasks
+      ansible.builtin.include_tasks: tasks/nginx-n8n.yaml

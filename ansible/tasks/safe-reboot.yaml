@@ -1,0 +1,9 @@
+---
+# Safe reboot task for Raspberry Pi
+- name: Safely reboot the Raspberry Pi
+  ansible.builtin.reboot:
+    reboot_timeout: 600
+    test_command: whoami
+  become: true
+  tags:
+    - safe-reboot

@@ -1,0 +1,59 @@
+---
+- name: Install nginx + htpasswd tool
+  ansible.builtin.apt:
+    name:
+      - nginx
+      - apache2-utils
+    state: present
+    update_cache: true
+
+# Optional basic auth creation
+# - name: Create htpasswd file for n8n
+#   ansible.builtin.command: >
+#     htpasswd -bc {{ n8n_nginx_htpasswd_path }}
+#     {{ n8n_nginx_basic_auth_user }}
+#     {{ n8n_nginx_basic_auth_password }}
+#   args:
+#     creates: "{{ n8n_nginx_htpasswd_path }}"
+#   no_log: true
+
+- name: Install nginx site config for n8n
+  ansible.builtin.template:
+    src: n8n.nginx.j2
+    dest: /etc/nginx/sites-available/n8n
+    owner: root
+    group: root
+    mode: "0644"
+  register: n8n_nginx_conf
+
+- name: Enable nginx site config
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/n8n
+    dest: /etc/nginx/sites-enabled/n8n
+    state: link
+    force: true
+  register: n8n_nginx_link
+
+# Optional: keep default disabled if you want only your sites
+- name: Disable default nginx site if present
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  register: n8n_nginx_default
+
+- name: Validate nginx config
+  ansible.builtin.command: nginx -t
+  changed_when: false
+
+- name: Ensure nginx is enabled and running
+  ansible.builtin.service:
+    name: nginx
+    enabled: true
+    state: started
+  when: not ansible_check_mode
+
+- name: Reload nginx if config changed
+  ansible.builtin.service:
+    name: nginx
+    state: reloaded
+  when: (not ansible_check_mode) and (n8n_nginx_conf.changed or n8n_nginx_link.changed or n8n_nginx_default.changed)

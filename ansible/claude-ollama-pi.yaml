@@ -1,0 +1,10 @@
+---
+- name: Install Ollama + Nginx proxy on Raspberry Pi
+  hosts: all
+  become: true
+  vars_files:
+    - vars.yaml
+
+  tasks:
+    - import_tasks: tasks/ollama.yaml
+    - import_tasks: tasks/nginx-ollama.yaml

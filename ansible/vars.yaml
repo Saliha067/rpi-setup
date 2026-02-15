@@ -1,0 +1,53 @@
+---
+# Configuration Variables for Raspberry Pi Setup
+
+# SSH Configuration
+ssh_port: 6767
+
+# Users
+admin_user: md67pi
+general_user: general
+
+# Packages to install
+packages:
+  - ufw                # Uncomplicated Firewall: simple host-based firewall
+  - fail2ban           # Bans IPs with too many failed login attempts (intrusion prevention)
+  - unattended-upgrades # Automatically install security updates
+  - apt-listchanges    # Show package change logs during upgrades
+  # DO NOT install Docker or docker-compose here! Installed via official Docker setup only.
+  - uidmap             # User/group ID mapping for rootless containers
+  - dbus-user-session  # User session bus for rootless Docker
+  - slirp4netns        # User-mode networking for rootless containers
+  - fuse-overlayfs     # Overlay filesystem for rootless Docker
+  - net-tools          # For ifconfig and netstat commands
+
+# Nginx exposure for Ollama
+ollama_nginx_port: 8080
+ollama_nginx_htpasswd_path: /etc/nginx/.htpasswd_ollama
+
+# Pick a username + strong password (DO NOT use 1234)
+ollama_nginx_basic_auth_user: "ollama"
+ollama_nginx_basic_auth_password: "munna67+"
+
+# Restrict who can reach it (put your Mac's LAN IP / CIDR here)
+# Example: only allow your Mac IP:
+# ollama_nginx_allow_cidrs: ["192.168.1.50/32"]
+ollama_nginx_allow_cidrs:
+  # - "192.168.0.0/16"
+  # - "10.0.0.0/8"
+  # - "172.16.0.0/12"
+  - "192.168.0.0/24" # or your LAN CIDR for broader access (adjust as needed)
+
+# Ollama models to pull (Pi4: keep them small)
+ollama_models:
+  - "llama3.2:3b"
+
+# n8n nginx proxy
+n8n_nginx_port: 5679
+n8n_nginx_allow_cidrs:
+  - 192.168.0.17/32   # or your macbook IP /32 for strictness
+
+# Optional basic auth
+n8n_nginx_htpasswd_path: /etc/nginx/.htpasswd-n8n
+n8n_nginx_basic_auth_user: admin
+n8n_nginx_basic_auth_password: "Munna67+"

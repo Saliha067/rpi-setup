@@ -1,0 +1,10 @@
+---
+- name: Docker setup only
+  hosts: all
+  become: true
+  vars_files:
+    - vars.yaml
+
+  tasks:
+    - name: Include Docker setup tasks
+      ansible.builtin.include_tasks: tasks/docker-setup.yaml

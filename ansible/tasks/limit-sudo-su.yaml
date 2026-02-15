@@ -1,0 +1,80 @@
+---
+# Limit sudo and su to only the admin user (md67pi)
+
+- name: Ensure only admin user is in sudo group
+  ansible.builtin.user:
+    name: "{{ admin_user }}"
+    groups: sudo
+    append: false
+    state: present
+  ignore_errors: "{{ ansible_check_mode }}"
+
+- name: Remove general user from sudo group (if present)
+  ansible.builtin.command:
+    cmd: gpasswd -d {{ general_user }} sudo
+  register: remove_sudo
+  changed_when: remove_sudo.rc == 0
+  failed_when: false
+  ignore_errors: "{{ ansible_check_mode }}"
+
+- name: Ensure suusers group exists
+  ansible.builtin.group:
+    name: suusers
+    state: present
+  ignore_errors: "{{ ansible_check_mode }}"
+
+- name: Add admin user to suusers group
+  ansible.builtin.user:
+    name: "{{ admin_user }}"
+    groups: suusers
+    append: true
+    state: present
+  ignore_errors: "{{ ansible_check_mode }}"
+
+- name: Remove general user from suusers group (if present)
+  ansible.builtin.command:
+    cmd: gpasswd -d {{ general_user }} suusers
+  register: remove_su
+  changed_when: remove_su.rc == 0
+  failed_when: false
+  ignore_errors: "{{ ansible_check_mode }}"
+
+
+- name: Check if statoverride for /bin/su exists
+  ansible.builtin.command: dpkg-statoverride --list /bin/su
+  register: su_statoverride_check
+  changed_when: false
+  failed_when: false
+
+
+- name: Add or update statoverride for /bin/su
+  ansible.builtin.shell: |
+    dpkg-statoverride --update --remove /bin/su || true
+    dpkg-statoverride --update --add root suusers 4750 /bin/su
+  register: su_statoverride_result
+  changed_when: su_statoverride_result.rc == 0
+  failed_when: su_statoverride_result.rc != 0
+
+- name: Confirm only admin user is in sudo group
+  ansible.builtin.command: getent group sudo
+  register: sudo_group_check
+
+- name: Show sudo group membership
+  ansible.builtin.debug:
+    msg: "sudo group: {{ sudo_group_check.stdout }}"
+
+- name: Confirm only admin user is in suusers group
+  ansible.builtin.command: getent group suusers
+  register: suusers_group_check
+
+- name: Show suusers group membership
+  ansible.builtin.debug:
+    msg: "suusers group: {{ suusers_group_check.stdout }}"
+
+- name: Confirm /bin/su permissions
+  ansible.builtin.command: stat -c '%U %G %a' /bin/su
+  register: su_bin_stat
+
+- name: Show /bin/su permissions
+  ansible.builtin.debug:
+    msg: "/bin/su permissions: {{ su_bin_stat.stdout }}"

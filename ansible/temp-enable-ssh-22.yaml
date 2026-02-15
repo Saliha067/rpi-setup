@@ -1,0 +1,90 @@
+---
+# TEMP enable SSH on port 22 AND allow both publickey + password auth
+# Run:
+# ansible-playbook -i inventory.yaml temp-enable-ssh-22.yaml -l md-work-1
+
+- name: TEMP enable SSH 22 + allow password and key
+  hosts: all
+  become: true
+  vars_files:
+    - vars.yaml
+
+  tasks:
+    - name: Warn if admin user has no password set (login by password will fail)
+      ansible.builtin.command: "passwd -S {{ admin_user }}"
+      register: pw_status
+      changed_when: false
+      failed_when: false
+
+    - name: Show password status for admin user
+      ansible.builtin.debug:
+        msg: "Password status for {{ admin_user }}: {{ pw_status.stdout }}"
+
+    - name: Ensure ssh.socket override directory exists
+      ansible.builtin.file:
+        path: /etc/systemd/system/ssh.socket.d
+        state: directory
+        mode: "0755"
+
+    - name: Add port 22 to ssh.socket (keep {{ ssh_port }})
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/ssh.socket.d/override.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Socket]
+          ListenStream=
+          ListenStream=0.0.0.0:22
+          ListenStream=0.0.0.0:{{ ssh_port }}
+
+    - name: Enable PasswordAuthentication (TEMP)
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^(#\s*)?PasswordAuthentication\s+'
+        line: 'PasswordAuthentication yes'
+        state: present
+        backup: yes
+
+    - name: Ensure PubkeyAuthentication is enabled (TEMP)
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^(#\s*)?PubkeyAuthentication\s+'
+        line: 'PubkeyAuthentication yes'
+        state: present
+        backup: yes
+
+    - name: Validate sshd_config
+      ansible.builtin.command: /usr/sbin/sshd -t -f /etc/ssh/sshd_config
+      changed_when: false
+
+    - name: Reload systemd
+      ansible.builtin.command: systemctl daemon-reload
+      changed_when: false
+
+    - name: Restart ssh socket (force)
+      ansible.builtin.service:
+        name: ssh.socket
+        state: restarted
+
+    - name: Restart ssh service (force)
+      ansible.builtin.service:
+        name: ssh
+        state: restarted
+
+    - name: Allow SSH 22 in UFW (TEMP)
+      ansible.builtin.ufw:
+        rule: allow
+        port: "22"
+        proto: tcp
+        comment: "TEMP SSH 22"
+      ignore_errors: "{{ ansible_check_mode }}"
+
+    - name: Show ssh listening ports
+      ansible.builtin.command: ss -lntp
+      register: ss_out
+      changed_when: false
+
+    - name: Print sshd lines
+      ansible.builtin.debug:
+        msg: "{{ ss_out.stdout_lines | select('search', 'sshd') | list }}"

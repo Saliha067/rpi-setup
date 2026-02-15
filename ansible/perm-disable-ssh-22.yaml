@@ -1,0 +1,88 @@
+---
+# PERMANENTLY disable SSH on port 22 and revert to key-only auth (6767 remains)
+# Run:
+# ansible-playbook -i inventory.yaml perm-disable-ssh-22.yaml -l md-work-1
+
+- name: Permanently disable SSH on 22 and revert to key-only auth
+  hosts: all
+  become: true
+  vars_files:
+    - vars.yaml
+
+  tasks:
+    - name: Ensure ssh.socket override directory exists
+      ansible.builtin.file:
+        path: /etc/systemd/system/ssh.socket.d
+        state: directory
+        mode: "0755"
+
+    - name: Force ssh.socket to permanent port {{ ssh_port }} only
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/ssh.socket.d/override.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Socket]
+          ListenStream=
+          ListenStream=0.0.0.0:{{ ssh_port }}
+
+    - name: Revert SSH to key-only auth (disable password auth)
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^(#\s*)?PasswordAuthentication\s+'
+        line: 'PasswordAuthentication no'
+        state: present
+        backup: yes
+
+    - name: Ensure PubkeyAuthentication is enabled
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^(#\s*)?PubkeyAuthentication\s+'
+        line: 'PubkeyAuthentication yes'
+        state: present
+        backup: yes
+
+    - name: Validate sshd_config
+      ansible.builtin.command: /usr/sbin/sshd -t -f /etc/ssh/sshd_config
+      changed_when: false
+
+    - name: Reload systemd
+      ansible.builtin.command: systemctl daemon-reload
+      changed_when: false
+
+    - name: Restart ssh socket (force)
+      ansible.builtin.service:
+        name: ssh.socket
+        state: restarted
+
+    - name: Restart ssh service (force)
+      ansible.builtin.service:
+        name: ssh
+        state: restarted
+
+    - name: Remove UFW allow rule for port 22
+      ansible.builtin.ufw:
+        rule: allow
+        port: "22"
+        proto: tcp
+        delete: yes
+      ignore_errors: true
+
+    - name: Show ssh listening ports
+      ansible.builtin.command: ss -lntp
+      register: ss_out
+      changed_when: false
+
+    - name: Print sshd lines
+      ansible.builtin.debug:
+        msg: "{{ ss_out.stdout_lines | select('search', 'sshd') | list }}"
+
+    - name: Show effective SSH auth settings
+      ansible.builtin.command: /usr/sbin/sshd -T
+      register: sshd_t
+      changed_when: false
+
+    - name: Print effective auth lines
+      ansible.builtin.debug:
+        msg: "{{ sshd_t.stdout_lines | select('match', '^(passwordauthentication|pubkeyauthentication) ') | list }}"

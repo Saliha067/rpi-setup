@@ -1,0 +1,53 @@
+# Clawd Bot Gateway – systemd unit (hardened)
+# Managed by Ansible
+
+[Unit]
+Description=Clawd Bot Gateway
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User={{ clawdbot_user }}
+Group={{ clawdbot_user }}
+Environment=HOME={{ clawdbot_home }}
+Environment=NPM_CONFIG_CACHE={{ clawdbot_home }}/.npm
+WorkingDirectory={{ clawdbot_home }}
+ExecStart=/usr/bin/clawdbot gateway --port {{ clawdbot_gateway_port }} --bind {{ clawdbot_bind }}
+Restart=on-failure
+RestartSec=10
+
+# Hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+
+# Writable paths (must exist before start)
+ReadWritePaths={{ clawdbot_home }}/.clawdbot {{ clawdbot_home }}/.cache {{ clawdbot_home }}/clawd {{ clawdbot_home }}/.npm
+
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
+
+# Fix for Node/libuv interface enumeration (os.networkInterfaces uses netlink)
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target
+

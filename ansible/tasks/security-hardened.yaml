@@ -1,0 +1,99 @@
+---
+# Works on Debian 11 + Ubuntu (systemd)
+
+- name: Install security packages
+  ansible.builtin.package:
+    name:
+      - ufw
+      - fail2ban
+      - unattended-upgrades
+    state: present
+  become: true
+
+# ----- SSH hardening (safe defaults, keeps port as-is) -----
+- name: Install sshd hardening drop-in
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/99-hardening.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      PermitRootLogin no
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitEmptyPasswords no
+      X11Forwarding no
+      MaxAuthTries 3
+      LoginGraceTime 30
+      ClientAliveInterval 300
+      ClientAliveCountMax 2
+      AllowTcpForwarding yes
+  register: sshd_hardening
+  become: true
+
+- name: Restart ssh if config changed
+  ansible.builtin.service:
+    name: "{{ 'ssh' }}"
+    state: restarted
+  when: sshd_hardening.changed
+  become: true
+
+# ----- UFW baseline -----
+- name: Reset UFW to known state (idempotent-ish)
+  ansible.builtin.command: ufw --force reset
+  changed_when: false
+  become: true
+
+- name: Set UFW defaults
+  ansible.builtin.command: "ufw default {{ item }}"
+  loop:
+    - "deny incoming"
+    - "allow outgoing"
+  changed_when: false
+  become: true
+
+# Allow SSH to the CURRENT ssh port for each host
+- name: Allow SSH from LAN
+  ansible.builtin.command: "ufw allow from {{ lan_cidr }} to any port {{ ansible_port }} proto tcp"
+  changed_when: false
+  become: true
+
+# If this host is the Ollama host, allow 8080 only from the OpenClaw host
+- name: Allow Ollama API from OpenClaw host only (only on md-work-2)
+  ansible.builtin.command: "ufw allow from {{ openclaw_host_ip }} to any port 8080 proto tcp"
+  changed_when: false
+  when: inventory_hostname == ollama_host_name
+  become: true
+
+- name: Enable UFW
+  ansible.builtin.command: ufw --force enable
+  changed_when: false
+  become: true
+
+# ----- Fail2ban -----
+- name: Configure fail2ban jail for sshd (ufw banaction)
+  ansible.builtin.copy:
+    dest: /etc/fail2ban/jail.d/sshd.local
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [sshd]
+      enabled = true
+      backend = systemd
+      banaction = ufw
+      port = {{ ansible_port }}
+      maxretry = 5
+      findtime = 10m
+      bantime = 1h
+      ignoreip = 127.0.0.1/8 ::1 {{ lan_cidr }}
+  register: f2b_jail
+  become: true
+
+- name: Restart and enable fail2ban
+  ansible.builtin.service:
+    name: fail2ban
+    state: restarted
+    enabled: true
+  when: f2b_jail.changed
+  become: true

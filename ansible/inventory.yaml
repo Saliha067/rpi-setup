@@ -1,0 +1,22 @@
+---
+# Raspberry Pi Inventory
+# Default SSH port is 6767 (final state after hardening)
+# For FIRST RUN, override with: -e "ansible_port=22"
+
+all:
+  vars:
+    ansible_user: md67pi
+    ansible_ssh_private_key_file: /Users/mythily/.ssh/md-worker
+    ansible_port: 6767
+    ansible_python_interpreter: /usr/bin/python3
+
+  hosts:
+    md-work-1:
+      ansible_host: 192.168.0.26 # wlan / 192.168.0.27 # eth0
+
+    md-work-2:
+      ansible_host: 192.168.0.28 # wlan / 192.168.0.38 # eth0
+
+    clockwork-pi:
+      ansible_host: 192.168.0.43 # wlan 
+      

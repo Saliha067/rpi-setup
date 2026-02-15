@@ -1,0 +1,57 @@
+---
+- name: Install nginx + htpasswd tool
+  ansible.builtin.apt:
+    name:
+      - nginx
+      - apache2-utils
+    state: present
+    update_cache: true
+
+# - name: Create htpasswd file for Ollama
+#   ansible.builtin.command: >
+#     htpasswd -bc {{ ollama_nginx_htpasswd_path }}
+#     {{ ollama_nginx_basic_auth_user }}
+#     {{ ollama_nginx_basic_auth_password }}
+#   args:
+#     creates: "{{ ollama_nginx_htpasswd_path }}"
+#   no_log: true
+
+- name: Install nginx site config for Ollama
+  ansible.builtin.template:
+    src: ollama.nginx.j2
+    dest: /etc/nginx/sites-available/ollama
+    owner: root
+    group: root
+    mode: "0644"
+  register: ollama_nginx_conf
+
+- name: Enable nginx site config
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/ollama
+    dest: /etc/nginx/sites-enabled/ollama
+    state: link
+    force: true
+  register: ollama_nginx_link
+
+- name: Disable default nginx site if present
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  register: ollama_nginx_default
+
+- name: Validate nginx config
+  ansible.builtin.command: nginx -t
+  changed_when: false
+
+- name: Ensure nginx is enabled and running
+  ansible.builtin.service:
+    name: nginx
+    enabled: true
+    state: started
+  when: not ansible_check_mode
+
+- name: Reload nginx if config changed
+  ansible.builtin.service:
+    name: nginx
+    state: reloaded
+  when: (not ansible_check_mode) and (ollama_nginx_conf.changed or ollama_nginx_link.changed or ollama_nginx_default.changed)

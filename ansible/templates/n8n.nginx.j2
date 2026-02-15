@@ -1,0 +1,30 @@
+server {
+  listen {{ n8n_nginx_port }};
+
+  # --- IP allowlist ---
+{% for cidr in n8n_nginx_allow_cidrs %}
+  allow {{ cidr }};
+{% endfor %}
+  deny all;
+
+  # --- Optional Basic auth ---
+  # auth_basic "n8n";
+  # auth_basic_user_file {{ n8n_nginx_htpasswd_path }};
+
+  location / {
+    proxy_pass http://127.0.0.1:5678;
+    proxy_http_version 1.1;
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    # WebSocket support (important for n8n UI)
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+  }
+}

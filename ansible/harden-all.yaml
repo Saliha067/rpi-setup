@@ -1,0 +1,8 @@
+---
+- name: Harden all hosts (UFW + Fail2ban + SSH)
+  hosts: all
+  become: true
+  vars_files:
+    - vars_security.yaml
+  tasks:
+    - ansible.builtin.include_tasks: tasks/security-hardened.yaml

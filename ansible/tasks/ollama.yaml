@@ -1,0 +1,56 @@
+---
+- name: Ensure dependencies
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+    state: present
+    update_cache: true
+
+- name: Download Ollama install script
+  ansible.builtin.get_url:
+    url: https://ollama.com/install.sh
+    dest: /tmp/ollama-install.sh
+    mode: "0755"
+
+- name: Check if ollama exists
+  ansible.builtin.command: which ollama
+  register: ollama_check
+  failed_when: false
+  changed_when: false
+
+- name: Install Ollama if missing
+  ansible.builtin.command: /tmp/ollama-install.sh
+  when: ollama_check.rc != 0
+
+- name: Create systemd override dir for ollama
+  ansible.builtin.file:
+    path: /etc/systemd/system/ollama.service.d
+    state: directory
+    mode: "0755"
+
+- name: Bind Ollama to localhost only (recommended)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/ollama.service.d/override.conf
+    mode: "0644"
+    content: |
+      [Service]
+      Environment=OLLAMA_HOST=127.0.0.1:11434
+
+- name: Reload systemd
+  ansible.builtin.command: systemctl daemon-reload
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Enable and start ollama
+  ansible.builtin.service:
+    name: ollama
+    enabled: true
+    state: started
+  when: not ansible_check_mode
+
+- name: Pull Ollama models
+  ansible.builtin.command: "ollama pull {{ item }}"
+  loop: "{{ ollama_models }}"
+  register: ollama_pull
+  changed_when: false

@@ -1,0 +1,216 @@
+---
+# Raspberry Pi 4 Hardened Setup Playbook
+# Run with: ansible-playbook -i inventory.yaml setup-pi.yaml --diff
+
+- name: Setup Raspberry Pi 4 with hardened security and Docker
+  hosts: all
+  become: true
+  vars_files:
+    - vars.yaml
+
+  handlers:
+    - name: Restart SSH
+      ansible.builtin.service:
+        name: ssh
+        state: restarted
+
+    - name: Reload systemd
+      ansible.builtin.command: systemctl daemon-reload
+      changed_when: false
+
+    - name: Restart SSH socket
+      ansible.builtin.service:
+        name: ssh.socket
+        state: restarted
+
+    - name: Restart fail2ban
+      ansible.builtin.service:
+        name: fail2ban
+        state: restarted
+      ignore_errors: "{{ ansible_check_mode }}"
+
+    - name: Reload UFW
+      ansible.builtin.ufw:
+        state: reloaded
+      ignore_errors: "{{ ansible_check_mode }}"
+
+  tasks:
+    # ==========================================
+    # SECTION 1: User Management
+    # ==========================================
+
+    - name: Ensure admin user is in sudo group
+      ansible.builtin.user:
+        name: "{{ admin_user }}"
+        groups: sudo
+        append: true
+        state: present
+
+    - name: Create general user WITHOUT sudo access
+      ansible.builtin.user:
+        name: "{{ general_user }}"
+        shell: /bin/bash
+        create_home: true
+        state: present
+
+    - name: Ensure general user is NOT in sudo group
+      ansible.builtin.command:
+        cmd: "gpasswd -d {{ general_user }} sudo"
+      register: remove_sudo
+      changed_when: "'removed' in remove_sudo.stderr"
+      failed_when: false
+
+    - name: Include sudo/su restriction tasks
+      ansible.builtin.include_tasks: tasks/limit-sudo-su.yaml
+
+    # ==========================================
+    # SECTION 2: Package Installation
+    # ==========================================
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install required packages
+      ansible.builtin.apt:
+        name: "{{ packages }}"
+        state: present
+
+    # ==========================================
+    # SECTION 3: Automatic Updates
+    # ==========================================
+
+    - name: Enable unattended-upgrades
+      ansible.builtin.debconf:
+        name: unattended-upgrades
+        question: unattended-upgrades/enable_auto_updates
+        value: "true"
+        vtype: boolean
+
+    - name: Configure unattended-upgrades - auto reboot if needed
+      ansible.builtin.lineinfile:
+        path: /etc/apt/apt.conf.d/50unattended-upgrades
+        regexp: '^(//)?Unattended-Upgrade::Automatic-Reboot '
+        line: 'Unattended-Upgrade::Automatic-Reboot "true";'
+        state: present
+
+    - name: Configure unattended-upgrades - reboot time
+      ansible.builtin.lineinfile:
+        path: /etc/apt/apt.conf.d/50unattended-upgrades
+        regexp: '^(//)?Unattended-Upgrade::Automatic-Reboot-Time '
+        line: 'Unattended-Upgrade::Automatic-Reboot-Time "03:00";'
+        state: present
+
+    # ==========================================
+    # SECTION 4: SSH Hardening (6767 permanent)
+    # ==========================================
+
+    - name: Deploy hardened SSH configuration (6767 only)
+      ansible.builtin.template:
+        src: templates/sshd_config.j2
+        dest: /etc/ssh/sshd_config
+        owner: root
+        group: root
+        mode: "0644"
+        validate: /usr/sbin/sshd -t -f %s
+      notify: Restart SSH
+
+    - name: Ensure ssh.socket override directory exists
+      ansible.builtin.file:
+        path: /etc/systemd/system/ssh.socket.d
+        state: directory
+        mode: "0755"
+
+    - name: Force ssh.socket to listen only on permanent port {{ ssh_port }}
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/ssh.socket.d/override.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Socket]
+          ListenStream=
+          ListenStream=0.0.0.0:{{ ssh_port }}
+      notify:
+        - Reload systemd
+        - Restart SSH socket
+        - Restart SSH
+
+    # ==========================================
+    # SECTION 5: Firewall (UFW)
+    # ==========================================
+
+    - name: Set UFW default deny incoming
+      ansible.builtin.ufw:
+        direction: incoming
+        policy: deny
+
+    - name: Set UFW default allow outgoing
+      ansible.builtin.ufw:
+        direction: outgoing
+        policy: allow
+
+    - name: Allow SSH on permanent port {{ ssh_port }}
+      ansible.builtin.ufw:
+        rule: allow
+        port: "{{ ssh_port }}"
+        proto: tcp
+        comment: "SSH permanent port"
+      notify: Reload UFW
+
+    - name: Enable UFW
+      ansible.builtin.ufw:
+        state: enabled
+
+    # ==========================================
+    # SECTION 6: Fail2ban
+    # ==========================================
+
+    - name: Deploy fail2ban jail configuration
+      ansible.builtin.template:
+        src: templates/jail.local.j2
+        dest: /etc/fail2ban/jail.local
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart fail2ban
+
+    - name: Enable and start fail2ban
+      ansible.builtin.service:
+        name: fail2ban
+        enabled: true
+        state: started
+      ignore_errors: "{{ ansible_check_mode }}"
+
+    # ==========================================
+    # SECTION 7: Docker Rootless Setup
+    # ==========================================
+
+    - name: Include Docker setup tasks
+      ansible.builtin.include_tasks: tasks/docker-setup.yaml
+
+    # ==========================================
+    # SECTION 8: Final Message
+    # ==========================================
+
+    - name: Display completion message
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          Raspberry Pi setup complete!
+
+          SSH Port (permanent): {{ ssh_port }}
+          Admin User: {{ admin_user }} (has sudo)
+          General User: {{ general_user }} (no sudo)
+
+          UFW: Enabled (SSH allowed on {{ ssh_port }})
+          Fail2ban: Enabled for SSH
+          Auto-updates: Enabled
+          Docker: Installed
+
+          Connect with: ssh -p {{ ssh_port }} {{ admin_user }}@<PI_IP>
+          ============================================
+
+    - name: Include nginx n8n proxy tasks
+      ansible.builtin.include_tasks: tasks/nginx-n8n.yaml
